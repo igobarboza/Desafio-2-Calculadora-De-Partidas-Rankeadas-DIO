@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Preview</title>
+    <style>
+        :root {
+            --bg: #0f172a; /* Azul muito escuro */
+            --surface: #1e293b;
+            --text: #cbd5e1;
+            --border: #334155;
+            --time: #64748b;
+        }
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            margin: 0;
+            padding: 2vh 2vw;
+            display: flex;
+            justify-content: center;
+        }
+        #app {
+            width: 100%;
+            max-width: 1000px;
+            background: var(--surface);
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+            overflow: hidden;
+            border: 1px solid var(--border);
+        }
+        /* Cabeçalho estilo janela de Mac/Terminal */
+        .header {
+            background: #0b1120;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-bottom: 1px solid var(--border);
+            font-size: 14px;
+            font-weight: 600;
+            color: #94a3b8;
+        }
+        .dot { height: 12px; width: 12px; border-radius: 50%; }
+        .dot.red { background: #ff5f56; }
+        .dot.yellow { background: #ffbd2e; }
+        .dot.green { background: #27c93f; margin-right: 10px; }
+        
+        #console-output {
+            max-height: 80vh;
+            overflow-y: auto;
+            font-family: 'Consolas', 'Fira Code', monospace;
+            font-size: 14px;
+        }
+        .log-row {
+            padding: 10px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            gap: 15px;
+            animation: fadeIn 0.3s ease;
+        }
+        .log-row:hover { background: rgba(255,255,255,0.02); }
+        .log-time { color: var(--time); font-size: 12px; flex-shrink: 0; padding-top: 2px; }
+        .log-content { flex-grow: 1; word-break: break-word; }
+        
+        /* Tipos Específicos */
+        .log-error { background: rgba(239, 68, 68, 0.1); color: #fca5a5; border-left: 4px solid #ef4444; }
+        .log-warn { background: rgba(245, 158, 11, 0.1); color: #fcd34d; border-left: 4px solid #f59e0b; }
+        
+        /* Tabelas geradas pelo console.table */
+        table.console-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 5px;
+            background: #0b1120;
+            border-radius: 6px;
+            overflow: hidden;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            font-size: 13px;
+        }
+        table.console-table th, table.console-table td {
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            text-align: left;
+        }
+        table.console-table th { background: #0f172a; color: #fff; text-transform: capitalize; }
+        table.console-table tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+        
+        pre { margin: 0; white-space: pre-wrap; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+
+    <div id="app">
+        <div class="header">
+            <span class="dot red"></span>
+            <span class="dot yellow"></span>
+            <span class="dot green"></span>
+            Console Output
+        </div>
+        <div id="console-output"></div>
+    </div>
+
+    <!-- Motor do Console -->
+    <script>
+        (function() {
+            const logger = document.getElementById('console-output');
+            const methods = ['log', 'warn', 'error', 'table'];
+            const originalConsole = {};
+
+            function getTime() {
+                const now = new Date();
+                return `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+            }
+
+            function appendLog(content, type = 'log', isHtml = false) {
+                const row = document.createElement('div');
+                row.className = `log-row ${type !== 'log' && type !== 'table' ? 'log-' + type : ''}`;
+                
+                const timeStr = `<div class="log-time">[${getTime()}]</div>`;
+                const contentStr = `<div class="log-content">${isHtml ? content : `<pre>${content}</pre>`}</div>`;
+                
+                row.innerHTML = timeStr + contentStr;
+                logger.appendChild(row);
+                logger.scrollTop = logger.scrollHeight; // Rola para baixo automaticamente
+            }
+
+            // Sobrescreve log, warn e error
+            ['log', 'warn', 'error'].forEach(method => {
+                originalConsole[method] = console[method];
+                console[method] = function() {
+                    let output = Array.from(arguments).map(arg => {
+                        return (typeof arg === 'object' && arg !== null) ? JSON.stringify(arg, null, 2) : String(arg);
+                    }).join(' ');
+                    
+                    appendLog(output, method);
+                    originalConsole[method].apply(console, arguments);
+                };
+            });
+
+            // Sobrescreve o table para criar uma tabela HTML real
+            originalConsole.table = console.table;
+            console.table = function(data) {
+                if (!data || typeof data !== 'object') return console.log(data);
+                
+                let html = '<table class="console-table"><thead><tr><th>(index)</th>';
+                let keys = new Set();
+                
+                // Pega as chaves para os cabeçalhos
+                if (Array.isArray(data)) {
+                    data.forEach(item => { if (item && typeof item === 'object') Object.keys(item).forEach(k => keys.add(k)); });
+                } else {
+                    Object.keys(data).forEach(k => { if (data[k] && typeof data[k] === 'object') Object.keys(data[k]).forEach(subK => keys.add(subK)); });
+                }
+                
+                keys = Array.from(keys);
+                keys.forEach(k => html += `<th>${k}</th>`);
+                html += '</tr></thead><tbody>';
+                
+                // Preenche as linhas
+                for (let i in data) {
+                    html += `<tr><td><strong>${i}</strong></td>`;
+                    keys.forEach(k => {
+                        let val = (data[i] && data[i][k] !== undefined) ? data[i][k] : '';
+                        if (typeof val === 'object' && val !== null) val = '{...}'; // Simplifica objetos aninhados
+                        html += `<td>${val}</td>`;
+                    });
+                    html += '</tr>';
+                }
+                html += '</tbody></table>';
+                
+                appendLog(html, 'table', true);
+                originalConsole.table.apply(console, arguments);
+            };
+        })();
+    </script>
+
+    <!-- O SEU CÓDIGO VEM AQUI -->
+    <script src="index.js"></script>
+    
+</body>
+</html>
